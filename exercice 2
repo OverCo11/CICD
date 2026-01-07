@@ -1,0 +1,108 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📥 Clonage du projet Python'
+                git branch: 'main', url: 'https://github.com/tom-dab/cicd-project.git'
+            }
+        }
+
+        stage('Setup Virtualenv & Dependencies') {
+            steps {
+                sh '''
+                    echo "🔧 Création d'un environnement virtuel"
+                    python3 -m venv venv
+
+                    echo "⚡ Activation du venv"
+                    . venv/bin/activate
+
+                    echo "📦 Mise à jour de pip"
+                    pip install --upgrade pip
+
+                    echo "📦 Installation des dépendances du projet"
+                    if [ -f "backend/requirements.txt" ]; then
+                        pip install -r backend/requirements.txt
+                    fi
+
+                    # Installation des dépendances manquantes et plugins pytest
+                    pip install flask-cors pytest-html pytest-cov
+
+                    echo "✅ Dépendances installées"
+                    pip list
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                    echo "🧪 Exécution des tests Python"
+                    . venv/bin/activate
+                    export PYTHONPATH="${PYTHONPATH}:${PWD}/backend"
+
+                    pytest -v \
+                        --junitxml=results.xml \
+                        --html=report.html \
+                        --self-contained-html \
+                        --cov=backend \
+                        --cov-report=html \
+                        --cov-report=term \
+                        backend/ || echo "Tests terminés avec erreurs"
+
+                    echo "📊 Résultats générés:"
+                    ls -la results.xml report.html htmlcov/ 2>/dev/null || echo "Certains rapports manquants"
+                '''
+            }
+
+            post {
+                always {
+                    script {
+                        if (fileExists('results.xml')) {
+                            junit 'results.xml'
+                        }
+                        if (fileExists('report.html')) {
+                            archiveArtifacts artifacts: 'report.html'
+                        }
+                        if (fileExists('htmlcov/index.html')) {
+                            archiveArtifacts artifacts: 'htmlcov/**/*'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Test Results Summary') {
+            steps {
+                sh '''
+                    if [ -f "results.xml" ]; then
+                        tests=$(grep -o 'tests="[^"]*"' results.xml | cut -d'"' -f2)
+                        failures=$(grep -o 'failures="[^"]*"' results.xml | cut -d'"' -f2)
+                        errors=$(grep -o 'errors="[^"]*"' results.xml | cut -d'"' -f2)
+
+                        echo "📈 Total tests: ${tests:-0}"
+                        echo "Échecs: ${failures:-0}"
+                        echo "Erreurs: ${errors:-0}"
+                        echo "Succès: $((${tests:-0} - ${failures:-0} - ${errors:-0}))"
+
+                        if [ "${failures:-0}" -eq 0 ] && [ "${errors:-0}" -eq 0 ]; then
+                            echo "✅ TOUS LES TESTS SONT PASSÉS"
+                        else
+                            echo "❌ DES TESTS ONT ÉCHOUÉ"
+                        fi
+                    else
+                        echo "❌ Aucun rapport de test trouvé"
+                    fi
+                '''
+            }
+        }
+    }
+
+    post {
+        always { echo '🧹 Nettoyage terminé' }
+        success { echo '🎉 Pipeline Python réussie!' }
+        failure { echo '❌ Échec de la pipeline Python' }
+        unstable { echo '⚠️ Pipeline instable' }
+    }
+}
