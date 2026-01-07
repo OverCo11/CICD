@@ -1,0 +1,25 @@
+pipeline {
+        agent any
+
+    stages {
+        stage('Générer le log') {
+            steps {
+                script {
+                    def date = sh(script: "date '+%Y-%m-%d %H:%M:%S'", returnStdout: true).trim()
+                    def nom_machine = sh(script: "hostname", returnStdout: true).trim()
+                    def nb_coeurs = sh(script: "grep -c ^processor /proc/cpuinfo", returnStdout: true).trim()
+                    def ram_kb = sh(script: "grep MemTotal /proc/meminfo | awk '{print \$2}'", returnStdout: true).trim()
+                    def ram = (ram_kb.toInteger() / 1024).toInteger()
+                    def util_disque = sh(script: "df / | tail -1 | awk '{print \$5}'", returnStdout: true).trim()
+
+                    writeFile file: '/tmp/exercice1.log', text: """-----
+Exécution de la pipeline Jenkins Exercice 1
+Début d'exécution à ${date} sur ${nom_machine}
+Cette machine dispose de ${nb_coeurs} coeurs de CPU, et ${ram} Mo de RAM.
+Le disque principal est utilisé à ${util_disque}.
+-----"""
+                }
+            }
+        }
+    }
+}
