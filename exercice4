@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'exercice4-coralie',
+                    url: 'https://github.com/tom-dab/cicd-project.git'
+            }
+        }
+
+        stage('Install system dependencies') {
+            steps {
+                sh '''
+                    echo "🔧 Installation des dépendances système"
+                    apt-get update
+                    apt-get install -y zip unzip
+                '''
+            }
+        }
+
+        stage('Setup Python') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r backend/requirements.txt
+                    pip install pytest pytest-html pytest-cov flask-cors
+                '''
+            }
+        }
+
+        stage('Tests') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    export PYTHONPATH=$WORKSPACE/backend
+                    pytest backend/ --junitxml=results.xml
+                '''
+            }
+            post {
+                always {
+                    junit 'results.xml'
+                }
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                sh '''
+                    echo "📦 Packaging backend"
+                    mkdir -p build
+                    zip -r build/backend.zip backend
+                '''
+            }
+        }
+
+        stage('Build Frontend') {
+            when {
+                expression { fileExists('frontend') }
+            }
+            steps {
+                sh '''
+                    echo "📦 Packaging frontend"
+                    zip -r build/frontend.zip frontend
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            archiveArtifacts artifacts: 'build/*.zip', fingerprint: true
+            echo "🎉 Build réussi et artifacts archivés"
+        }
+        failure {
+            echo "❌ Pipeline échouée"
+        }
+        always {
+            echo "🧹 Nettoyage terminé"
+        }
+    }
+}
